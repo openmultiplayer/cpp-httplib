@@ -415,7 +415,7 @@ struct Request {
 
   std::string remote_addr;
   int remote_port = -1;
-  socket_t socket;
+  struct sockaddr_storage sockaddr;
 
   // for server
   std::string version;
@@ -516,7 +516,8 @@ public:
 
   virtual ssize_t read(char *ptr, size_t size) = 0;
   virtual ssize_t write(const char *ptr, size_t size) = 0;
-  virtual void get_remote_ip_and_port(std::string &ip, int &port) const = 0;
+  virtual void get_remote_ip_and_port(struct sockaddr_storage &sockaddr,
+                                      std::string &ip, int &port) const = 0;
   virtual socket_t socket() const = 0;
 
   template <typename... Args>
@@ -1779,7 +1780,8 @@ public:
   bool is_writable() const override;
   ssize_t read(char *ptr, size_t size) override;
   ssize_t write(const char *ptr, size_t size) override;
-  void get_remote_ip_and_port(std::string &ip, int &port) const override;
+  void get_remote_ip_and_port(struct sockaddr_storage &sockaddr,
+                              std::string &ip, int &port) const override;
   socket_t socket() const override;
 
   const std::string &get_buffer() const;
@@ -2447,7 +2449,8 @@ public:
   bool is_writable() const override;
   ssize_t read(char *ptr, size_t size) override;
   ssize_t write(const char *ptr, size_t size) override;
-  void get_remote_ip_and_port(std::string &ip, int &port) const override;
+  void get_remote_ip_and_port(struct sockaddr_storage &sockaddr,
+                              std::string &ip, int &port) const override;
   socket_t socket() const override;
 
 private:
@@ -2476,7 +2479,8 @@ public:
   bool is_writable() const override;
   ssize_t read(char *ptr, size_t size) override;
   ssize_t write(const char *ptr, size_t size) override;
-  void get_remote_ip_and_port(std::string &ip, int &port) const override;
+  void get_remote_ip_and_port(struct sockaddr_storage &sockaddr,
+                              std::string &ip, int &port) const override;
   socket_t socket() const override;
 
 private:
@@ -2762,7 +2766,7 @@ inline std::string if2ip(int address_family, const std::string &ifn) {
   freeifaddrs(ifap);
   return addr_candidate;
 #else
-	return std::string();
+  return std::string();
 #endif
 }
 
@@ -2865,13 +2869,13 @@ inline bool get_remote_ip_and_port(const struct sockaddr_storage &addr,
   return true;
 }
 
-inline void get_remote_ip_and_port(socket_t sock, std::string &ip, int &port) {
-  struct sockaddr_storage addr;
-  socklen_t addr_len = sizeof(addr);
-
-  if (!getpeername(sock, reinterpret_cast<struct sockaddr *>(&addr),
+inline void get_remote_ip_and_port(socket_t sock,
+                                   struct sockaddr_storage &sockaddr,
+                                   std::string &ip, int &port) {
+  socklen_t addr_len = sizeof(sockaddr);
+  if (!getpeername(sock, reinterpret_cast<struct sockaddr *>(&sockaddr),
                    &addr_len)) {
-    get_remote_ip_and_port(addr, addr_len, ip, port);
+    get_remote_ip_and_port(sockaddr, addr_len, ip, port);
   }
 }
 
@@ -4783,9 +4787,10 @@ inline ssize_t SocketStream::write(const char *ptr, size_t size) {
   return send_socket(sock_, ptr, size, CPPHTTPLIB_SEND_FLAGS);
 }
 
-inline void SocketStream::get_remote_ip_and_port(std::string &ip,
-                                                 int &port) const {
-  return detail::get_remote_ip_and_port(sock_, ip, port);
+inline void
+SocketStream::get_remote_ip_and_port(struct sockaddr_storage &sockaddr,
+                                     std::string &ip, int &port) const {
+  return detail::get_remote_ip_and_port(sock_, sockaddr, ip, port);
 }
 
 inline socket_t SocketStream::socket() const { return sock_; }
@@ -4810,8 +4815,10 @@ inline ssize_t BufferStream::write(const char *ptr, size_t size) {
   return static_cast<ssize_t>(size);
 }
 
-inline void BufferStream::get_remote_ip_and_port(std::string & /*ip*/,
-                                                 int & /*port*/) const {}
+inline void
+BufferStream::get_remote_ip_and_port(struct sockaddr_storage & /*sockaddr*/,
+                                     std::string & /*ip*/,
+                                     int & /*port*/) const {}
 
 inline socket_t BufferStream::socket() const { return 0; }
 
@@ -5787,11 +5794,10 @@ Server::process_request(Stream &strm, bool close_connection,
       req.get_header_value("Connection") != "Keep-Alive") {
     connection_closed = true;
   }
-	
-  strm.get_remote_ip_and_port(req.remote_addr, req.remote_port);
+
+  strm.get_remote_ip_and_port(req.sockaddr, req.remote_addr, req.remote_port);
   req.set_header("REMOTE_ADDR", req.remote_addr);
   req.set_header("REMOTE_PORT", std::to_string(req.remote_port));
-  req.socket = strm.socket();
 
   if (req.has_header("Range")) {
     const auto &range_header_value = req.get_header_value("Range");
@@ -7414,9 +7420,9 @@ inline ssize_t SSLSocketStream::write(const char *ptr, size_t size) {
   return -1;
 }
 
-inline void SSLSocketStream::get_remote_ip_and_port(std::string &ip,
+inline void SSLSocketStream::get_remote_ip_and_port(struct sockaddr_storage &sockaddr, std::string &ip,
                                                     int &port) const {
-  detail::get_remote_ip_and_port(sock_, ip, port);
+  detail::get_remote_ip_and_port(sock_, sockaddr, ip, port);
 }
 
 inline socket_t SSLSocketStream::socket() const { return sock_; }
