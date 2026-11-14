@@ -21,12 +21,12 @@ struct StopWatch {
 int main(void) {
   string body(1024 * 5, 'a');
 
-  httplib::Client cli("httpbin.org", 80);
+  httplib::Client cli("httpcan.org", 80);
 
   for (int i = 0; i < 3; i++) {
     StopWatch sw(to_string(i).c_str());
     auto res = cli.Post("/post", body, "application/octet-stream");
-    assert(res->status == 200);
+    assert(res->status == httplib::StatusCode::OK_200);
   }
 
   return 0;
